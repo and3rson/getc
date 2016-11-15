@@ -36,18 +36,24 @@ class MainWindow(Gtk.Window, Async):
 
         self.last_notification_id = 0
 
-        if len(sys.argv) > 1:
-            host, _, port = sys.argv[1].partition(':')
-            if port:
-                port = int(port)
-            else:
-                port = 2379
-        else:
-            host, port = '127.0.0.1', 2379
-        print host, port
-        self.client = Client(host, port)
+        # if len(sys.argv) > 1:
+        #     host, _, port = sys.argv[1].partition(':')
+        #     if port:
+        #         port = int(port)
+        #     else:
+        #         port = 2379
+        # else:
+        #     host, port = '127.0.0.1', 2379
+        # print host, port
+        # self.client = Client(host, port)
+
+        self.client = None
 
         self.connect('destroy', Gtk.main_quit)
+
+        self.set_title('gEtc')
+        # self.window.set_icon_from_file(os.path.join(DIR, 'icons/icon128.png'))
+        self.accels = Gtk.AccelGroup()
 
         self.tree_view = Gtk.TreeView()
         self.tree_model = Gtk.TreeStore(GObject.TYPE_STRING, GObject.TYPE_STRING, GObject.TYPE_STRING, GObject.TYPE_STRING)
@@ -86,6 +92,8 @@ class MainWindow(Gtk.Window, Async):
 
         self.box = Gtk.VBox()
 
+        self.box.pack_start(self.create_toolbar(), False, True, 0)
+
         self.hbox = Gtk.HBox()
 
         self.hbox.pack_start(self.tree_view, False, True, 0)
@@ -96,17 +104,48 @@ class MainWindow(Gtk.Window, Async):
 
         self.add(self.box)
 
+        self.add_accel_group(self.accels)
+        self.maximize()
+
         # Initial refresh
 
-        self.refresh()
+        # self.refresh()
+
+    def _connect(self, button):
+        result = self.prompt_hostname(self, 'Connect to host')
+        if result:
+            host, port = result
+            self.client = Client(host, int(port))
+            self.refresh()
+
+    def create_toolbar(self):
+        self.toolbar = Gtk.Toolbar()
+        connect_button = Gtk.ToolButton.new_from_stock(Gtk.STOCK_CONNECT)
+        connect_button.connect('clicked', self._connect)
+        self.toolbar.insert(connect_button, 0)
+
+        accelerator = '<Ctrl>o'
+        key, mod = Gtk.accelerator_parse(accelerator)
+        connect_button.add_accelerator('clicked', self.accels, key, mod, Gtk.AccelFlags.VISIBLE)
+
+        self.toolbar.show_all()
+        return self.toolbar
 
     def refresh(self):
         def process():
             self.tree_model.clear()
-            return self.client.get('/')
+            try:
+                result = self.client.get('/')
+            except Exception as e:
+                self.client = None
+                self.notify('gtk-dialog-error', 'Error', 'Failed to connect:\n{}'.format(e.message))
+                result = None
+            return result
         self.spawn(process, self.refresh_cb)
 
     def refresh_cb(self, root):
+        if not root:
+            return
         iter = self.tree_model.append(None, ('/', '/', 'dir' if root.dir else 'doc', 'gtk-directory'))
         # self.tree_model.append(iter, ('Loading...', 'loading', 'gtk-refresh'))
         # self.populate(iter, root.children)
@@ -382,6 +421,47 @@ class MainWindow(Gtk.Window, Async):
         dialogWindow.destroy()
         if (response == Gtk.ResponseType.OK) and (text != ''):
             return text
+        else:
+            return None
+
+    def prompt_hostname(self, parent, message):
+        # Returns user input as a string or None
+        # If user does not input text it returns None, NOT AN EMPTY STRING.
+        dialogWindow = Gtk.MessageDialog(
+            parent,
+            Gtk.DialogFlags.MODAL | Gtk.DialogFlags.DESTROY_WITH_PARENT,
+            Gtk.MessageType.QUESTION,
+            Gtk.ButtonsType.OK_CANCEL,
+            message
+        )
+
+        dialogWindow.set_title('Connect')
+
+        dialogBox = dialogWindow.get_content_area()
+        hBox = Gtk.HBox(margin=8)
+
+        host = Gtk.Entry()
+        host.set_text('127.0.0.1')
+        host.set_size_request(150, 0)
+        hBox.pack_start(host, True, True, 0)
+
+        label = Gtk.Label(':')
+        hBox.pack_start(label, False, True, 8)
+
+        port = Gtk.SpinButton.new_with_range(0, 65535, 1)
+        port.set_value(2379)
+        port.set_size_request(50, 0)
+        hBox.pack_start(port, True, True, 0)
+
+        dialogBox.pack_end(hBox, False, False, 0)
+
+        dialogWindow.show_all()
+        response = dialogWindow.run()
+        host = host.get_text()
+        port = port.get_text()
+        dialogWindow.destroy()
+        if (response == Gtk.ResponseType.OK) and (host != ''):
+            return host, port
         else:
             return None
 
