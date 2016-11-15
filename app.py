@@ -1,3 +1,5 @@
+#!/usr/bin/env python2
+
 from gi.repository import Gtk, Gdk, GObject, GdkPixbuf, GtkSource, Pango
 from threading import Thread
 from etcd import Client
